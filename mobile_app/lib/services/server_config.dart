@@ -8,6 +8,7 @@ class ServerConfig {
   static String activeBaseUrl = 'https://christ-intelli-bot-backend.onrender.com/api';
 
   static Future<void> detectActiveServer() async {
+    return;
     final List<String> candidates = [
       'http://localhost:5000/api',     // USB connected device with ADB reverse, Web, iOS Simulator
       'http://10.0.2.2:5000/api',       // Android Emulator standard host loopback
