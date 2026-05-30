@@ -1,5 +1,6 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const MenuItem = require('../models/MenuItem');
+const { retrieveContext } = require('../../ragEngine');
 const Canteen = require('../models/Canteen');
 const Faculty = require('../models/Faculty');
 const CampusInformation = require('../models/CampusInformation');
@@ -83,10 +84,15 @@ const processMessage = async (req, res) => {
 
         const currentDate = new Date().toLocaleString();
         
+        const ragContext = await retrieveContext(userMessage);
+        
         const systemInstruction = `You are Intelli-Bot, the official smart AI assistant for Christ University Kengeri Campus. You possess complete knowledge of the university. 
 
 **CURRENT SYSTEM DATE AND TIME: ${currentDate}**
 Use the exact current date to answer questions about 'today', 'tomorrow', or 'upcoming' events.
+
+Use the following retrieved database context to inform your answer. If the context is relevant, rely on it heavily: 
+${ragContext}
 
 Answer the user's prompt using ONLY the following official context data: 
 ${injectedContext}
