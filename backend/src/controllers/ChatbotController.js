@@ -1,6 +1,7 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const MenuItem = require('../models/MenuItem');
 const { retrieveContext } = require('../../ragEngine');
+const { fetchLiveWebSearch } = require('../../webSearchEngine');
 const Canteen = require('../models/Canteen');
 const Faculty = require('../models/Faculty');
 const CampusInformation = require('../models/CampusInformation');
@@ -86,7 +87,7 @@ const processMessage = async (req, res) => {
         
         const ragContext = await retrieveContext(userMessage);
         
-        const systemInstruction = `You are Intelli-Bot, the official smart AI assistant for Christ University Kengeri Campus. You possess complete knowledge of the university. 
+        const systemInstruction = `You are an intelligent campus assistant. Evaluate the provided database context against the user's query.
 
 **CURRENT SYSTEM DATE AND TIME: ${currentDate}**
 Use the exact current date to answer questions about 'today', 'tomorrow', or 'upcoming' events.
@@ -96,15 +97,14 @@ ${ragContext}
 
 Answer the user's prompt using ONLY the following official context data: 
 ${injectedContext}
-If the answer is not in the context, politely state you do not have that information.
-If the user asks a very broad question (e.g., 'Tell me about campus facilities' or 'What events are happening?'), summarize the answer AND provide 3-4 related topic chips to guide them.
 
 CRITICAL RULE FOR NAVIGATION:
 If the user asks about a specific faculty member, a canteen, or an event with a physical location, you MUST set "actionType" to "NAVIGATE". If you have their exact coordinates in the context, provide the full "navigationPayload". If you only know the location name (like "Main Auditorium"), set "spatialTarget" to the location name and set "navigationPayload" to null. Only use "INFO_ONLY" or "BROAD_TOPIC" for purely informational queries without physical destinations.
 
-You MUST output your final response as a raw JSON object without any markdown block formatting. Use this exact schema:
+You MUST output your response in this exact JSON structure:
 {
-  "aiMessage": "Your conversational answer here.",
+  "requiresWebSearch": boolean,
+  "aiMessage": "Your answer",
   "actionType": "INFO_ONLY" | "NAVIGATE" | "BROAD_TOPIC",
   "spatialTarget": "Exact Name of the building/room if actionType is NAVIGATE, otherwise null",
   "suggestedChips": ["String Array", "Max 4 items", "Only if BROAD_TOPIC, else empty"],
@@ -116,7 +116,10 @@ You MUST output your final response as a raw JSON object without any markdown bl
     "latitude": 12.86,
     "longitude": 77.43
   } // (Set to null if actionType is INFO_ONLY or BROAD_TOPIC)
-}`;
+}
+
+- If the provided context fully answers the question, set requiresWebSearch to false and write your answer in aiMessage.
+- If the context does NOT contain the answer, or the user is asking for real-time/outside information, set requiresWebSearch to true and leave aiMessage empty.`;
 
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
         const model = genAI.getGenerativeModel({ 
@@ -142,8 +145,16 @@ You MUST output your final response as a raw JSON object without any markdown bl
             parsedJson = { 
                 aiMessage: "I experienced a cognitive error processing the data. Please rephrase.", 
                 actionType: "INFO_ONLY", 
-                spatialTarget: null 
+                spatialTarget: null,
+                requiresWebSearch: false
             };
+        }
+
+        // The Agentic Router Logic
+        if (parsedJson.requiresWebSearch === true) {
+            console.log("[Router] Local context insufficient. Triggering Live Web Search...");
+            const liveWebData = await fetchLiveWebSearch(userMessage);
+            parsedJson.aiMessage = liveWebData; 
         }
 
         // IMPORTANT: We return the parsed JSON inside 'reply' because mobile_app ApiService.chat expects response['reply']
