@@ -2,9 +2,19 @@ const mongoose = require('mongoose');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 require('dotenv').config();
 
+// 1. Register the Schema for the live server
+const KnowledgeSchema = new mongoose.Schema({
+    question: String,
+    answer: String,
+    context: String,
+    embedding: [Number]
+});
+
+// Safely check if it already exists to prevent overwrite errors
+const Knowledge = mongoose.models.Knowledge || mongoose.model('Knowledge', KnowledgeSchema);
+
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const embeddingModel = genAI.getGenerativeModel({ model: "gemini-embedding-001" });
-const chatModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
 // Helper Function: Cosine Similarity Math
 function cosineSimilarity(vecA, vecB) {
@@ -21,8 +31,6 @@ function cosineSimilarity(vecA, vecB) {
 }
 
 async function retrieveContext(userQuery) {
-    const Knowledge = mongoose.model('Knowledge');
-    
     // 1. Keyword Search (BM25 Equivalent)
     const keywordResults = await Knowledge.find(
         { $text: { $search: userQuery } },
@@ -33,7 +41,7 @@ async function retrieveContext(userQuery) {
     const queryEmbeddingResult = await embeddingModel.embedContent(userQuery);
     const queryVector = queryEmbeddingResult.embedding.values;
     
-    const allDocs = await Knowledge.find({}); // Fetch all 1000 docs for in-memory math
+    const allDocs = await Knowledge.find({}); // Fetch docs for in-memory math
     
     let vectorResults = allDocs.map(doc => {
         return {
