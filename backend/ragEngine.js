@@ -31,32 +31,40 @@ function cosineSimilarity(vecA, vecB) {
 }
 
 async function retrieveContext(userQuery) {
-    // 1. Keyword Search (BM25 Equivalent)
+    const Knowledge = mongoose.model('Knowledge');
+    let combinedContext = "Here is information from the database:\n";
+    
+    // 1. Always grab the fast Keyword results first
     const keywordResults = await Knowledge.find(
         { $text: { $search: userQuery } },
         { score: { $meta: "textScore" } }
-    ).sort({ score: { $meta: "textScore" } }).limit(2);
+    ).sort({ score: { $meta: "textScore" } }).limit(3);
 
-    // 2. Vector Search (Semantic Meaning)
-    const queryEmbeddingResult = await embeddingModel.embedContent(userQuery);
-    const queryVector = queryEmbeddingResult.embedding.values;
-    
-    const allDocs = await Knowledge.find({}); // Fetch docs for in-memory math
-    
-    let vectorResults = allDocs.map(doc => {
-        return {
-            document: doc,
-            similarity: cosineSimilarity(queryVector, doc.embedding)
-        };
-    });
-    
-    vectorResults.sort((a, b) => b.similarity - a.similarity);
-    const topVectorDocs = vectorResults.slice(0, 2).map(item => item.document);
-
-    // 3. Combine Context
-    let combinedContext = "Here is information from the database:\n";
     keywordResults.forEach(doc => combinedContext += `- ${doc.context}\n`);
-    topVectorDocs.forEach(doc => combinedContext += `- ${doc.context}\n`);
+
+    try {
+        // 2. Attempt Vector Search safely
+        const queryEmbeddingResult = await embeddingModel.embedContent(userQuery);
+        const queryVector = queryEmbeddingResult.embedding.values;
+        
+        // Limit documents fetched to reduce in-memory CPU latency on Render free tier
+        const sampleDocs = await Knowledge.find({}).limit(200); 
+        
+        let vectorResults = sampleDocs.map(doc => {
+            return {
+                document: doc,
+                similarity: cosineSimilarity(queryVector, doc.embedding)
+            };
+        });
+        
+        vectorResults.sort((a, b) => b.similarity - a.similarity);
+        const topVectorDocs = vectorResults.slice(0, 2).map(item => item.document);
+        
+        topVectorDocs.forEach(doc => combinedContext += `- ${doc.context}\n`);
+        console.log("Hybrid Search: Vector components integrated successfully.");
+    } catch (error) {
+        console.warn("Embedding API Quota limit hit. Falling back smoothly to pure Keyword Search strategy.");
+    }
 
     return combinedContext;
 }
